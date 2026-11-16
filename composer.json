@@ -4,8 +4,10 @@
   "type": "project",
   "require": {
     "php": ">=8.1",
-    "tihloh/prefab-core": "^0.6",
-    "ext-pdo_sqlite": "*"
+    "tihloh/prefab-core": "^0.5",
+    "ext-pdo_sqlite": "*",
+    "tihloh/prefab-auth": "^0.6",
+    "tihloh/prefab-users": "^0.6"
   },
   "config": {
     "sort-packages": true
