@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require dirname(__DIR__) . '/vendor/autoload.php';
+require dirname(__DIR__) . '/bootstrap/database.php';
 
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -20,12 +21,20 @@ $submittedName = '';
 $submittedAmount = '';
 $message = null;
 $error = null;
+$records = [];
+$database = null;
+try {
+    $database = app_database();
+} catch (Throwable $exception) {
+    error_log('SQLite initialization failed: ' . $exception->getMessage());
+    $error = 'Database is unavailable. Check the SQLite extension and storage permissions.';
+}
 
 if (!isset($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $database !== null) {
     $submittedName = (string) ($_POST['name'] ?? '');
     $submittedAmount = (string) ($_POST['amount'] ?? '');
     $token = (string) ($_POST['csrf_token'] ?? '');
@@ -42,9 +51,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Enter a valid amount.';
         } else {
             $amount = (float) val($rawAmount)->toFloat()->value();
-            $message = 'Hello, ' . $name . '! Your amount is PHP ' . number_format($amount, 2) . '.';
-            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            try {
+                $database->statement(
+                    'INSERT INTO submissions (name, amount) VALUES (:name, :amount)',
+                    ['name' => $name, 'amount' => $amount]
+                );
+                $message = 'Saved ' . $name . ' with PHP ' . number_format($amount, 2) . '.';
+                $submittedName = '';
+                $submittedAmount = '';
+                $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+            } catch (Throwable $exception) {
+                error_log('SQLite insert failed: ' . $exception->getMessage());
+                $error = 'Could not save the record. Please try again.';
+            }
         }
+    }
+}
+if ($database !== null) {
+    try {
+        $records = $database->select(
+            'SELECT id, name, amount, created_at FROM submissions ORDER BY id DESC LIMIT 10'
+        );
+    } catch (Throwable $exception) {
+        error_log('SQLite read failed: ' . $exception->getMessage());
+        $error = 'Could not load saved records.';
     }
 }
 ?>
@@ -77,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="card shadow-sm h-100">
                     <div class="card-body p-4">
                         <h2 class="h5 mb-3">Try a Prefab-powered form</h2>
-                        <p class="text-secondary small">The server trims your name and converts your amount using <code>val()</code>.</p>
+                        <p class="text-secondary small">The server validates inputs using <code>val()</code> and saves them to SQLite through Prefab Core.</p>
                         <?php if ($error !== null): ?>
                             <div class="alert alert-danger" role="alert"><?= e($error) ?></div>
                         <?php endif; ?>
@@ -94,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <label class="form-label" for="amount">Sample amount (PHP)</label>
                                 <input class="form-control" id="amount" name="amount" type="number" step="any" required value="<?= e($submittedAmount) ?>" placeholder="1250.50">
                             </div>
-                            <button class="btn btn-primary" type="submit">Process with Prefab</button>
+                            <button class="btn btn-primary" type="submit" <?= $database === null ? 'disabled' : '' ?>>Save to SQLite</button>
                         </form>
                     </div>
                 </div>
@@ -115,6 +145,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             </aside>
         </div>
+        <section class="card shadow-sm mt-4">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Recent submissions</h2>
+                <?php if ($records === []): ?>
+                    <p class="text-secondary mb-0">No records yet.</p>
+                <?php else: ?>
+                    <div class="table-responsive">
+                        <table class="table table-striped align-middle mb-0">
+                            <thead><tr><th scope="col">#</th><th scope="col">Name</th><th scope="col" class="text-end">Amount (PHP)</th><th scope="col">Created (UTC)</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($records as $record): ?>
+                                <tr>
+                                    <td><?= (int) $record['id'] ?></td>
+                                    <td><?= e((string) $record['name']) ?></td>
+                                    <td class="text-end"><?= e(number_format((float) $record['amount'], 2)) ?></td>
+                                    <td><?= e((string) $record['created_at']) ?></td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </section>
         <footer class="text-center text-secondary small mt-5">Powered by PHP, Prefab Core, and Bootstrap.</footer>
     </main>
 </body>
