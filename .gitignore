@@ -2,3 +2,7 @@
 /.env
 /.idea/
 /.vscode/
+/storage/*.sqlite
+/storage/*.sqlite-*
+/storage/*.db
+/storage/*.db-*
